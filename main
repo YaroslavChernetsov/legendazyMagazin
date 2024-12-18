@@ -1,0 +1,195 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Game Store',
+      theme: ThemeData.dark(),
+      home: AuthScreen(),
+      routes: {
+        '/products': (ctx) => ProductScreen(),
+        '/chat': (ctx) => ChatScreen(),
+      },
+    );
+  }
+}
+
+class AuthScreen extends StatefulWidget {
+  @override
+  _AuthScreenState createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLogin = true;
+
+  void _submitAuthForm() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    try {
+      if (_isLogin) {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } else {
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      }
+      Navigator.of(context).pushReplacementNamed('/products');
+    } catch (e) {
+      print('Auth Error: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(_isLogin ? 'Login' : 'Register')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
+            ),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: 'Password'),
+              obscureText: true,
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _submitAuthForm,
+              child: Text(_isLogin ? 'Login' : 'Sign Up'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _isLogin = !_isLogin;
+                });
+              },
+              child: Text(
+                  _isLogin ? 'Create a new account' : 'Already have an account?'),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ProductScreen extends StatelessWidget {
+  final List<Map<String, String>> products = [
+    {'name': 'Game 1', 'image': 'https://via.placeholder.com/150'},
+    {'name': 'Game 2', 'image': 'https://via.placeholder.com/150'},
+    {'name': 'Game 3', 'image': 'https://via.placeholder.com/150'},
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Game Store')),
+      body: GridView.builder(
+        padding: EdgeInsets.all(10.0),
+        itemCount: products.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 3 / 4,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+        ),
+        itemBuilder: (context, index) {
+          final product = products[index];
+          return GridTile(
+            child: Image.network(product['image']!, fit: BoxFit.cover),
+            footer: GridTileBar(
+              backgroundColor: Colors.black87,
+              title: Text(product['name']!),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class ChatScreen extends StatelessWidget {
+  final _messageController = TextEditingController();
+
+  void _sendMessage() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      FirebaseFirestore.instance.collection('chat').add({
+        'text': _messageController.text,
+        'createdAt': Timestamp.now(),
+        'userId': user.uid,
+      });
+      _messageController.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Chat')),
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder(
+              stream: FirebaseFirestore.instance
+                  .collection('chat')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
+              builder: (ctx, AsyncSnapshot<QuerySnapshot> chatSnapshot) {
+                if (chatSnapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator());
+                }
+                final chatDocs = chatSnapshot.data!.docs;
+                return ListView.builder(
+                  reverse: true,
+                  itemCount: chatDocs.length,
+                  itemBuilder: (ctx, index) => ListTile(
+                    title: Text(chatDocs[index]['text']),
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: InputDecoration(labelText: 'Send a message...'),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.send),
+                  onPressed: _sendMessage,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
